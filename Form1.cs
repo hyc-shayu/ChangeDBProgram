@@ -15,6 +15,7 @@ namespace WindowsFormsApp1
     public partial class Form1 : Form
     {
         const string INFPATH = @"changetable.inf";
+        const string SecretKey = "hyc";
 
         public Form1()
         {
@@ -116,11 +117,11 @@ namespace WindowsFormsApp1
                 File.Create(INFPATH).Close();
             using (StreamWriter writer = new StreamWriter(INFPATH))
             {
-                writer.WriteLine(server);
-                writer.WriteLine(account);
-                writer.WriteLine(password);
-                writer.WriteLine(database);
-                writer.WriteLine(table);
+                writer.WriteLine(Encrypt(server));
+                writer.WriteLine(Encrypt(account));
+                writer.WriteLine(Encrypt(password));
+                writer.WriteLine(Encrypt(database));
+                writer.WriteLine(Encrypt(table));
             }
         }
 
@@ -135,17 +136,34 @@ namespace WindowsFormsApp1
             {
                 using(StreamReader reader = new StreamReader(INFPATH))
                 {
-                    tbServer.Text = reader.ReadLine();
-                    tbAccount.Text = reader.ReadLine();
-                    tbPassword.Text = reader.ReadLine();
-                    tbDatabase.Text = reader.ReadLine();
-                    tbTable.Text = reader.ReadLine();
+                    tbServer.Text = Encrypt(reader.ReadLine());
+                    tbAccount.Text = Encrypt(reader.ReadLine());
+                    tbPassword.Text = Encrypt(reader.ReadLine());
+                    tbDatabase.Text = Encrypt(reader.ReadLine());
+                    tbTable.Text = Encrypt(reader.ReadLine());
                 }
             }
             catch
             {
             }
         }
+
+        /// <summary>
+        /// 异或加密
+        /// </summary>
+        /// <param name="content">The content.</param>
+        /// <returns></returns>
+        private string Encrypt(string content)
+        {
+            char[] data = content.ToCharArray();
+            char[] key = SecretKey.ToCharArray();
+            for (int i = 0; i<data.Length; i++)
+            {
+                data[i] ^= key[i % key.Length];
+            }
+            return new string(data);
+        }
+
     }
 
 }
