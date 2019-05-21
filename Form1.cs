@@ -34,7 +34,11 @@ namespace WindowsFormsApp1
             string password = tbPassword.Text.Trim();
             string database = tbDatabase.Text.Trim();
             string table = tbTable.Text.Trim();
-            saveInf(server, account, password, database, table);
+            if(string.IsNullOrEmpty(server)||string.IsNullOrEmpty(account)||string.IsNullOrEmpty(password)||string.IsNullOrEmpty(database)||string.IsNullOrEmpty(table))
+            {
+                MessageBox.Show("不能为空");
+                return;
+            }
             //连接数据库
             string connStr = @"server=" + server + ";database=" + database + ";user id=" + account + ";pwd=" + password;
             SqlConnection conn = new SqlConnection(connStr);
@@ -45,17 +49,19 @@ namespace WindowsFormsApp1
                 {
                     executeSQLFromTable(dt, conn);
                     MessageBox.Show("修改成功");
+                    //保存数据
+                    saveInf(server, account, password, database, table);
                 }
                 else
                     MessageBox.Show("没有需要修改的列");
             }
-            catch
+            catch (SqlException)
+            {
+                MessageBox.Show("连接失败");
+            }
+            catch (Exception)
             {
                 MessageBox.Show("发生一个错误");
-            }
-            finally
-            {
-                conn.Dispose();
             }
         }
 
