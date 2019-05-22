@@ -100,25 +100,40 @@ namespace WindowsFormsApp1
         private bool isExistsTable(SqlConnection conn, string table)
         {
             string sql = "select count(1) from sysobjects where name like '" + table + "'";
-            conn.Open();
-            SqlCommand cmd = new SqlCommand(sql, conn);
-            int result = Convert.ToInt32(cmd.ExecuteScalar());
-            conn.Close();
-            if (result == 0)
+            try
             {
-                MessageBox.Show("表不存在");
+                conn.Open();
+                SqlCommand cmd = new SqlCommand(sql, conn);
+                int result = Convert.ToInt32(cmd.ExecuteScalar());
+                if (result == 0)
+                {
+                    MessageBox.Show("表不存在");
+                    return false;
+                }
+                else
+                {
+                    return true;
+                }
+            }
+            catch
+            {
+                MessageBox.Show("连接失败，请检查输入");
                 return false;
             }
-            else
+            finally
             {
-                return true;
+                conn.Close();
             }
         }
 
+        /// <summary>
+        /// 执行修改流程
+        /// </summary>
+        /// <returns>成功或失败</returns>
         private bool execute()
         {
             try
-            {
+            {            
                 DataTable dt = getSqlTable(conn, inf.Table, inf.OldType, inf.NewType);
                 if (dt.Rows.Count > 0)
                 {
@@ -136,7 +151,7 @@ namespace WindowsFormsApp1
             }
             catch (Exception e)
             {
-                MessageBox.Show(string.Format("发生一个错误，原因如下\n",e.Message));
+                MessageBox.Show(string.Format("发生一个错误，原因如下\n",e.ToString()));
                 return false;
             }
         }
@@ -164,13 +179,23 @@ namespace WindowsFormsApp1
             //              "))) " +
             //              "order by d.name,a.name";
 
+            string[] tmpStrs = oldType.Split(' ');
+            if (tmpStrs.Length > 1)
+            {
+                for (int i = 0; i < tmpStrs.Length; i++)
+                {
+                    tmpStrs[i] = string.Format("'{0}'", tmpStrs[i]);
+                }
+                oldType = string.Join(",",tmpStrs);
+            }
+
             string sql = "SELECT 'alter table ['+d.name+ '] alter column [' + a.name + '] " + newType +
                           "' as my_sql " +
                           "FROM syscolumns a " +
                           "left join systypes b on a.xtype = b.xusertype " +
                           "inner join sysobjects d on a.id = d.id and d.xtype = 'U' and d.name like '" + tableStr + "' and d.name <> 'dtproperties'" +
                           "where " +
-                          "b.name = '" + oldType + "' " +
+                          "b.name in (" + oldType + ") " +
                           "and " +
                           "not exists(SELECT 1 FROM sysobjects where xtype = 'PK' and name in ( " +
                           "SELECT name FROM sysindexes WHERE indid in (" +
@@ -209,7 +234,7 @@ namespace WindowsFormsApp1
             catch (Exception e)
             {
                 transaction.Rollback();
-                MessageBox.Show(string.Format("修改失败，错误原因如下\n{0}", e.Message));
+                MessageBox.Show(string.Format("修改失败，错误原因如下\n{0}", e.ToString()));
                 return false;
             }
             finally
