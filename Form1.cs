@@ -15,7 +15,7 @@ namespace WindowsFormsApp1
     public partial class Form1 : Form
     {
         const string INFPATH = @"changetable.inf";
-        const string SecretKey = "hyc";
+        private InfClass inf = new InfClass();
 
         public Form1()
         {
@@ -29,41 +29,118 @@ namespace WindowsFormsApp1
         /// <param name="e"></param>
         private void button1_Click(object sender, EventArgs e)
         {
-            string server = tbServer.Text.Trim();
-            string account = tbAccount.Text.Trim();
-            string password = tbPassword.Text.Trim();
-            string database = tbDatabase.Text.Trim();
-            string table = tbTable.Text.Trim();
-            if(string.IsNullOrEmpty(server)||string.IsNullOrEmpty(account)||string.IsNullOrEmpty(password)||string.IsNullOrEmpty(database)||string.IsNullOrEmpty(table))
+            inf.Server = tbServer.Text.Trim();
+            inf.Account = tbAccount.Text.Trim();
+            inf.Password = tbPassword.Text.Trim();
+            inf.Database = tbDatabase.Text.Trim();
+            inf.Table = tbTable.Text.Trim();
+            inf.OldType = tbOldType.Text.Trim();
+            inf.NewType = tbNewType.Text.Trim();
+
+            if(inf.hasNullOrEmpty())
             {
                 MessageBox.Show("不能为空");
                 return;
             }
-            //连接数据库
-            string connStr = @"server=" + server + ";database=" + database + ";user id=" + account + ";pwd=" + password;
-            SqlConnection conn = new SqlConnection(connStr);
+            //保存数据
+            inf.saveInf(INFPATH);
+
+            SQLServer sql_server = new SQLServer(inf);
+            sql_server.run();
+            
+        }
+        
+        
+
+        /// <summary>
+        /// 加载窗口时，从文件读取上次输入的信息
+        /// </summary>
+        /// <param name="sender">The source of the event.</param>
+        /// <param name="e">The <see cref="EventArgs"/> instance containing the event data.</param>
+        private void Form1_Load(object sender, EventArgs e)
+        {
+            inf.readInfFromFile(INFPATH);
+            tbServer.Text = inf.Server;
+            tbAccount.Text = inf.Account;
+            tbPassword.Text = inf.Password;
+            tbDatabase.Text = inf.Database;
+            tbTable.Text = inf.Table;
+            tbOldType.Text = inf.OldType;
+            tbNewType.Text = inf.NewType;
+        }
+
+    }
+
+    class SQLServer
+    {
+        private SqlConnection conn;
+        private InfClass inf;
+
+        public SQLServer(InfClass inf)
+        {
+            this.inf = inf;
+            string connStr = @"server=" + inf.Server + ";database=" + inf.Database + ";user id=" + inf.Account + ";pwd=" + inf.Password;
+            this.conn = new SqlConnection(connStr);
+        }
+
+        public void run()
+        {
+            if (!isExistsTable(conn, inf.Table)|| !execute())
+                return;
+        }
+
+        /// <summary>
+        /// 判断是否存在表
+        /// </summary>
+        /// <param name="conn">The connection.</param>
+        /// <param name="table">The table.</param>
+        /// <returns>
+        ///   <c>true</c> if [is exists table] [the specified connection]; otherwise, <c>false</c>.
+        /// </returns>
+        private bool isExistsTable(SqlConnection conn, string table)
+        {
+            string sql = "select count(1) from sysobjects where name like '" + table + "'";
+            conn.Open();
+            SqlCommand cmd = new SqlCommand(sql, conn);
+            int result = Convert.ToInt32(cmd.ExecuteScalar());
+            conn.Close();
+            if (result == 0)
+            {
+                MessageBox.Show("表不存在");
+                return false;
+            }
+            else
+            {
+                return true;
+            }
+        }
+
+        private bool execute()
+        {
             try
             {
-                DataTable dt = getSqlTable(conn, table);
+                DataTable dt = getSqlTable(conn, inf.Table, inf.OldType, inf.NewType);
                 if (dt.Rows.Count > 0)
                 {
-                    executeSQLFromTable(dt, conn);
-                    MessageBox.Show("修改成功");
-                    //保存数据
-                    saveInf(server, account, password, database, table);
+                    if (executeSQLFromTable(dt, conn))
+                        MessageBox.Show("修改成功");
                 }
                 else
                     MessageBox.Show("没有需要修改的列");
+                return true;
             }
             catch (SqlException)
             {
-                MessageBox.Show("连接失败");
+                MessageBox.Show("修改失败，请检查输入");
+                return false;
             }
-            catch (Exception)
+            catch (Exception e)
             {
-                MessageBox.Show("发生一个错误");
+                MessageBox.Show(string.Format("发生一个错误，原因如下\n",e.Message));
+                return false;
             }
         }
+
 
         /// <summary>
         /// 获取一个存储sql语句的表
@@ -71,22 +148,36 @@ namespace WindowsFormsApp1
         /// <param name="conn">The connection.</param>
         /// <param name="tableStr">The table string.</param>
         /// <returns></returns>
-        private DataTable getSqlTable(SqlConnection conn, string tableStr)
+        private DataTable getSqlTable(SqlConnection conn, string tableStr, string oldType, string newType)
         {
-            string sql = "SELECT 'alter table ['+d.name+ '] alter column [' + a.name + '] n'" +
-                          "+ b.name + '(' + cast(a.length * 2 as varchar) + ')' as my_sql " +
+            //string sql = "SELECT 'alter table ['+d.name+ '] alter column [' + a.name + '] n'" +
+            //              "+ b.name + '(' + cast(a.length * 2 as varchar) + ')' as my_sql " +
+            //              "FROM syscolumns a " +
+            //              "left join systypes b on a.xtype = b.xusertype " +
+            //              "inner join sysobjects d on a.id = d.id and d.xtype = 'U' and d.name like '" + tableStr + "' and d.name <> 'dtproperties'" +
+            //              "where " +
+            //              "b.name in('char', 'varchar') " +
+            //              "and " +
+            //              "not exists(SELECT 1 FROM sysobjects where xtype = 'PK' and name in ( " +
+            //              "SELECT name FROM sysindexes WHERE indid in (" +
+            //              "SELECT indid FROM sysindexkeys WHERE id = a.id AND colid = a.colid" +
+            //              "))) " +
+            //              "order by d.name,a.name";
+
+            string sql = "SELECT 'alter table ['+d.name+ '] alter column [' + a.name + '] " + newType +
+                          "' as my_sql " +
                           "FROM syscolumns a " +
                           "left join systypes b on a.xtype = b.xusertype " +
                           "inner join sysobjects d on a.id = d.id and d.xtype = 'U' and d.name like '" + tableStr + "' and d.name <> 'dtproperties'" +
                           "where " +
-                          "b.name in('char', 'varchar') " +
+                          "b.name = '" + oldType + "' " +
                           "and " +
                           "not exists(SELECT 1 FROM sysobjects where xtype = 'PK' and name in ( " +
                           "SELECT name FROM sysindexes WHERE indid in (" +
                           "SELECT indid FROM sysindexkeys WHERE id = a.id AND colid = a.colid" +
                           "))) " +
                           "order by d.name,a.name";
-            //string sql = "select * from " + tableStr;
+
             SqlDataAdapter adapter = new SqlDataAdapter(sql, conn);
             DataTable dt = new DataTable();
             adapter.Fill(dt);
@@ -98,60 +189,98 @@ namespace WindowsFormsApp1
         /// </summary>
         /// <param name="dt">The dt.</param>
         /// <param name="conn">The connection.</param>
-        private void executeSQLFromTable(DataTable dt, SqlConnection conn)
+        private bool executeSQLFromTable(DataTable dt, SqlConnection conn)
         {
             conn.Open();
-            foreach(DataRow dr in dt.Rows)
+            SqlTransaction transaction = conn.BeginTransaction();
+            SqlCommand cmd = new SqlCommand();
+            cmd.Connection = conn;
+            cmd.Transaction = transaction;
+            try
             {
-                SqlCommand cmd = new SqlCommand(dr[0] as string, conn);
-                cmd.ExecuteNonQuery();
+                foreach (DataRow dr in dt.Rows)
+                {
+                    cmd.CommandText = dr[0] as string;
+                    cmd.ExecuteNonQuery();
+                }
+                transaction.Commit();
+                return true;
             }
-            conn.Close();
+            catch (Exception e)
+            {
+                transaction.Rollback();
+                MessageBox.Show(string.Format("修改失败，错误原因如下\n{0}", e.Message));
+                return false;
+            }
+            finally
+            {
+                conn.Close();
+            }
         }
+    }
+
+    class InfClass
+    {
+        //异或加密字段
+        const string SecretKey = "hyc";
+
+        private string _server;
+        private string _account;
+        private string _password;
+        private string _database;
+        private string _table;
+        private string _oldType;
+        private string _newType;
+        public string Account { get => _account; set => _account = value; }
+        public string Server { get => _server; set => _server = value; }
+        public string Password { get => _password; set => _password = value; }
+        public string Database { get => _database; set => _database = value; }
+        public string Table { get => _table; set => _table = value; }
+        public string OldType { get => _oldType; set => _oldType = value; }
+        public string NewType { get => _newType; set => _newType = value; }
 
         /// <summary>
-        /// 保存输入信息
+        /// 判断有空的数据
         /// </summary>
-        /// <param name="server">The server.</param>
-        /// <param name="account">The account.</param>
-        /// <param name="password">The password.</param>
-        /// <param name="database">The database.</param>
-        /// <param name="table">The table.</param>
-        private void saveInf(string server, string account, string password, string database, string table)
+        /// <returns>
+        ///   <c>true</c> if [has null or empty]; otherwise, <c>false</c>.
+        /// </returns>
+        public bool hasNullOrEmpty()
         {
-            if (!File.Exists(INFPATH))
-                File.Create(INFPATH).Close();
-            using (StreamWriter writer = new StreamWriter(INFPATH))
+            return (string.IsNullOrEmpty(_server) || string.IsNullOrEmpty(_account) || string.IsNullOrEmpty(_password) || string.IsNullOrEmpty(_database) || string.IsNullOrEmpty(_table) || string.IsNullOrEmpty(_oldType) || string.IsNullOrEmpty(_newType));
+        }
+
+        public void saveInf(string path)
+        {
+            using (BinaryWriter writer = new BinaryWriter(new FileStream(path, FileMode.OpenOrCreate), Encoding.Unicode))
             {
-                writer.WriteLine(Encrypt(server));
-                writer.WriteLine(Encrypt(account));
-                writer.WriteLine(Encrypt(password));
-                writer.WriteLine(Encrypt(database));
-                writer.WriteLine(Encrypt(table));
+                writer.Write(Encrypt(string.Format("{0}—{1}—{2}—{3}—{4}—{5}—{6}", _server, _account, _password, _database, _table, _oldType, _newType)));
             }
         }
 
         /// <summary>
-        /// 加载窗口时，从文件读取上次输入的信息
+        /// 从文件中读取数据，设置属性
         /// </summary>
-        /// <param name="sender">The source of the event.</param>
-        /// <param name="e">The <see cref="EventArgs"/> instance containing the event data.</param>
-        private void Form1_Load(object sender, EventArgs e)
+        /// <param name="path">The path.</param>
+        public void readInfFromFile(string path)
         {
             try
             {
-                using(StreamReader reader = new StreamReader(INFPATH))
+                using (BinaryReader reader = new BinaryReader(new FileStream(path, FileMode.Open), Encoding.Unicode))
                 {
-                    tbServer.Text = Encrypt(reader.ReadLine());
-                    tbAccount.Text = Encrypt(reader.ReadLine());
-                    tbPassword.Text = Encrypt(reader.ReadLine());
-                    tbDatabase.Text = Encrypt(reader.ReadLine());
-                    tbTable.Text = Encrypt(reader.ReadLine());
+                    string rawStr = reader.ReadString();
+                    rawStr = Encrypt(rawStr);
+                    string[] strs = rawStr.Split('—');
+                    _server = strs[0];
+                    _account = strs[1];
+                    _password = strs[2];
+                    _database = strs[3];
+                    _table = strs[4];
+                    _oldType = strs[5];
+                    _newType = strs[6];
                 }
             }
-            catch
-            {
-            }
+            catch { }
         }
 
         /// <summary>
@@ -163,13 +292,12 @@ namespace WindowsFormsApp1
         {
             char[] data = content.ToCharArray();
             char[] key = SecretKey.ToCharArray();
-            for (int i = 0; i<data.Length; i++)
+            for (int i = 0; i < data.Length; i++)
             {
                 data[i] ^= key[i % key.Length];
             }
             return new string(data);
         }
-
     }
 
 }
